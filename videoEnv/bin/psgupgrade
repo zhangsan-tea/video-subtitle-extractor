@@ -1,0 +1,6 @@
+#!/Users/sanzhang/CodeBuddy/video-subtitle-extractor/videoEnv/bin/python3.12
+import sys
+from PySimpleGUI.PySimpleGUI import _upgrade_entry_point
+if __name__ == '__main__':
+    sys.argv[0] = sys.argv[0].removesuffix('.exe')
+    sys.exit(_upgrade_entry_point())
