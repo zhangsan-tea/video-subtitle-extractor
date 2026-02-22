@@ -1,0 +1,6 @@
+cd /Users/sanzhang/CodeBuddy/video-subtitle-extractor
+source videoEnv/bin/activate
+python gui.py
+cd /Users/sanzhang/CodeBuddy/video-subtitle-extractor
+source videoEnv/bin/activate
+python gui.py
