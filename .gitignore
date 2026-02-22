@@ -286,6 +286,7 @@ celerybeat.pid
 # .env
 .env/
 .venv/
+/videoEnv/
 env/
 venv/
 ENV/
