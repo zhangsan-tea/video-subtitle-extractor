@@ -1005,6 +1005,9 @@ class SubtitleExtractor:
                                                                                 'SUBTITLE_BACKDROP_FILTER': config.SUBTITLE_BACKDROP_FILTER,
                                                                                 'BACKDROP_STD_THRESHOLD': config.BACKDROP_STD_THRESHOLD,
                                                                                 'BACKDROP_BRIGHTNESS_MAX': config.BACKDROP_BRIGHTNESS_MAX,
+                                                                                'DENSE_TEXT_FILTER': config.DENSE_TEXT_FILTER,
+                                                                                'DENSE_MIN_CLUSTER_SIZE': config.DENSE_MIN_CLUSTER_SIZE,
+                                                                                'DENSE_VERTICAL_GAP_RATIO': config.DENSE_VERTICAL_GAP_RATIO,
                                                                                 }
                                                                        )
         self.subtitle_ocr_task_queue = task_queue

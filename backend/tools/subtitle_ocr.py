@@ -16,6 +16,68 @@ import numpy as np
 from collections import namedtuple
 
 
+def filter_dense_text_blocks(coordinates, texts, min_cluster_size=3, vertical_gap_ratio=2.0):
+    """
+    过滤密集文字块（如经文面板）：当一帧中多个文字框在垂直方向密集排列时，
+    判定它们属于叠加的文字面板而非字幕，将其过滤掉。
+    
+    算法逻辑：
+    1. 按文字框的垂直中心点排序
+    2. 计算相邻文字框的垂直间距
+    3. 如果连续 >= min_cluster_size 个文字框的垂直间距都小于文字框自身高度的 vertical_gap_ratio 倍，
+       则认为它们形成了密集文字群
+    4. 返回不属于密集文字群的文字框索引
+    
+    :param coordinates: 所有文字框坐标列表 [(xmin, xmax, ymin, ymax), ...]
+    :param texts: 对应的文字内容列表
+    :param min_cluster_size: 最小密集群大小，>=此数量的连续密集文字框才被视为面板
+    :param vertical_gap_ratio: 垂直间距与文字高度的比值阈值，间距小于 文字高度*ratio 视为密集
+    :return: 保留的文字框索引集合
+    """
+    if len(coordinates) < min_cluster_size:
+        # 文字框数量不足以形成密集群，全部保留
+        return set(range(len(coordinates)))
+
+    # 计算每个文字框的垂直中心和高度
+    box_info = []
+    for idx, coord in enumerate(coordinates):
+        xmin, xmax, ymin, ymax = coord
+        cy = (ymin + ymax) / 2.0
+        h = max(ymax - ymin, 1)
+        box_info.append((idx, cy, h, ymin, ymax))
+
+    # 按垂直中心排序
+    box_info.sort(key=lambda x: x[1])
+
+    # 寻找密集文字群：相邻文字框垂直间距小于平均文字高度 * ratio
+    dense_indices = set()
+    cluster = [box_info[0]]
+
+    for i in range(1, len(box_info)):
+        prev = cluster[-1]
+        curr = box_info[i]
+        # 垂直间距 = 当前框顶部 - 上一个框底部
+        gap = curr[3] - prev[4]
+        # 使用两个框平均高度作为参考
+        avg_h = (prev[2] + curr[2]) / 2.0
+        if gap < avg_h * vertical_gap_ratio:
+            cluster.append(curr)
+        else:
+            # 间距过大，当前簇结束
+            if len(cluster) >= min_cluster_size:
+                for item in cluster:
+                    dense_indices.add(item[0])
+            cluster = [curr]
+
+    # 处理最后一个簇
+    if len(cluster) >= min_cluster_size:
+        for item in cluster:
+            dense_indices.add(item[0])
+
+    # 返回不在密集群中的索引
+    return set(range(len(coordinates))) - dense_indices
+
+
 def has_subtitle_backdrop(img, coordinate, std_threshold=50, brightness_max=255):
     """
     检测文本区域是否有字幕衬底（半透明背景条）。
@@ -87,9 +149,30 @@ def extract_subtitles(data, text_recogniser, img, raw_subtitle_file,
     backdrop_std = getattr(options, 'BACKDROP_STD_THRESHOLD', 50)
     backdrop_bright = getattr(options, 'BACKDROP_BRIGHTNESS_MAX', 255)
 
-    for content, coordinate in zip(text_res, coordinates):
+    # 密集文字群过滤：过滤经文面板等大段叠加文字
+    dense_filter = getattr(options, 'DENSE_TEXT_FILTER', False)
+    dense_min_cluster = getattr(options, 'DENSE_MIN_CLUSTER_SIZE', 3)
+    dense_gap_ratio = getattr(options, 'DENSE_VERTICAL_GAP_RATIO', 2.0)
+    if dense_filter and len(coordinates) >= dense_min_cluster:
+        keep_indices = filter_dense_text_blocks(
+            coordinates, [t[0] for t in text_res],
+            min_cluster_size=dense_min_cluster,
+            vertical_gap_ratio=dense_gap_ratio
+        )
+    else:
+        keep_indices = set(range(len(coordinates)))
+
+    for idx, (content, coordinate) in enumerate(zip(text_res, coordinates)):
         text = content[0]
         prob = content[1]
+
+        # 如果该文字框属于密集文字群，跳过
+        if idx not in keep_indices:
+            if sub_area is not None:
+                loss_info = namedtuple('loss_info', 'text prob overflow_area_rate coordinate selected')
+                loss_list.append(loss_info(text, prob, 0, coordinate, False))
+            continue
+
         if sub_area is not None:
             selected = False
             # 初始化超界偏差为0
