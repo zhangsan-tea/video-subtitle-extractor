@@ -775,6 +775,18 @@ class SubtitleExtractor:
                 else:
                     idx_j += 1
                     continue
+
+        # 持续时间过滤：过滤掉持续时间异常长的文本（如背景经文、章节标题）
+        if config.LONG_DURATION_FILTER and config.LONG_DURATION_THRESHOLD > 0 and self.fps > 0:
+            max_frames = config.LONG_DURATION_THRESHOLD * self.fps
+            filtered_list = []
+            for item in unique_subtitle_list:
+                duration_frames = abs(int(item[1]) - int(item[0]))
+                if duration_frames <= max_frames:
+                    filtered_list.append(item)
+            if filtered_list:
+                unique_subtitle_list = filtered_list
+
         return unique_subtitle_list
 
     def _concat_content_with_same_frameno(self):
@@ -990,6 +1002,9 @@ class SubtitleExtractor:
                                                                                 'DROP_SCORE': config.DROP_SCORE,
                                                                                 'SUB_AREA_DEVIATION_RATE': config.SUB_AREA_DEVIATION_RATE,
                                                                                 'DEBUG_OCR_LOSS': config.DEBUG_OCR_LOSS,
+                                                                                'SUBTITLE_BACKDROP_FILTER': config.SUBTITLE_BACKDROP_FILTER,
+                                                                                'BACKDROP_STD_THRESHOLD': config.BACKDROP_STD_THRESHOLD,
+                                                                                'BACKDROP_BRIGHTNESS_MAX': config.BACKDROP_BRIGHTNESS_MAX,
                                                                                 }
                                                                        )
         self.subtitle_ocr_task_queue = task_queue

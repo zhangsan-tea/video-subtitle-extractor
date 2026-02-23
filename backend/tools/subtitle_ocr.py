@@ -16,6 +16,49 @@ import numpy as np
 from collections import namedtuple
 
 
+def has_subtitle_backdrop(img, coordinate, std_threshold=50, brightness_max=255):
+    """
+    检测文本区域是否有字幕衬底（半透明背景条）。
+    字幕衬底的特征：背景像素亮度较均匀（标准差小）且偏暗。
+    画面中的普通文字：背景是视频画面，像素颜色不均匀（标准差大）。
+    :param img: 视频帧（BGR格式）
+    :param coordinate: 文本框坐标 (xmin, xmax, ymin, ymax)
+    :param std_threshold: 亮度标准差阈值，低于此值认为有衬底
+    :param brightness_max: 亮度均值上限
+    :return: True 表示有衬底（是字幕），False 表示无衬底（非字幕）
+    """
+    xmin, xmax, ymin, ymax = coordinate
+    h, w = img.shape[:2]
+    # 安全裁剪
+    ymin = max(0, ymin)
+    ymax = min(h, ymax)
+    xmin = max(0, xmin)
+    xmax = min(w, xmax)
+    if ymax <= ymin or xmax <= xmin:
+        return True  # 无法判断时默认保留
+
+    # 裁剪文本框区域
+    roi = img[ymin:ymax, xmin:xmax]
+    # 转换为灰度图
+    gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+
+    # 对文本区域进行简单的边缘扩展采样（取上下边缘各几行像素作为背景样本）
+    text_h = ymax - ymin
+    sample_rows = max(2, text_h // 5)  # 取文本高度的1/5作为采样行数
+
+    # 采样上边缘和下边缘的像素作为背景
+    top_sample = gray[:sample_rows, :]
+    bottom_sample = gray[-sample_rows:, :]
+    bg_sample = np.concatenate([top_sample, bottom_sample], axis=0)
+
+    # 计算背景样本的亮度标准差和均值
+    std_val = np.std(bg_sample)
+    mean_val = np.mean(bg_sample)
+
+    # 判断：标准差小 → 背景均匀 → 有衬底
+    return std_val < std_threshold and mean_val < brightness_max
+
+
 def extract_subtitles(data, text_recogniser, img, raw_subtitle_file,
                       sub_area, options, dt_box_arg, rec_res_arg, ocr_loss_debug_path):
     """
@@ -38,6 +81,12 @@ def extract_subtitles(data, text_recogniser, img, raw_subtitle_file,
         text_res = [(res[0], res[1]) for res in rec_res]
     line = ''
     loss_list = []
+
+    # 获取背景衬底检测相关配置
+    backdrop_filter = getattr(options, 'SUBTITLE_BACKDROP_FILTER', False)
+    backdrop_std = getattr(options, 'BACKDROP_STD_THRESHOLD', 50)
+    backdrop_bright = getattr(options, 'BACKDROP_BRIGHTNESS_MAX', 255)
+
     for content, coordinate in zip(text_res, coordinates):
         text = content[0]
         prob = content[1]
@@ -57,6 +106,13 @@ def extract_subtitles(data, text_recogniser, img, raw_subtitle_file,
                 overflow_area_rate = ((sub_area_polygon.area + coordinate_polygon.area - intersection.area) / sub_area_polygon.area) - 1
                 # 如果越界比例低于设定阈值且该行文本识别的置信度高于设定阈值
                 if overflow_area_rate <= options.SUB_AREA_DEVIATION_RATE and prob > options.DROP_SCORE:
+                    # 背景衬底检测：如果启用，则只保留有衬底的文字
+                    if backdrop_filter:
+                        if not has_subtitle_backdrop(img, coordinate, backdrop_std, backdrop_bright):
+                            # 无衬底，跳过（不认为是字幕）
+                            loss_info = namedtuple('loss_info', 'text prob overflow_area_rate coordinate selected')
+                            loss_list.append(loss_info(text, prob, overflow_area_rate, coordinate, False))
+                            continue
                     # 保留该帧
                     selected = True
                     line += f'{str(data["i"]).zfill(8)}\t{coordinate}\t{text}\n'

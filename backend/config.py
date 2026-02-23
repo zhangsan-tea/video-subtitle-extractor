@@ -274,6 +274,31 @@ DELETE_EMPTY_TIMESTAMP = True
 # 是否重新分词, 用于解决没有语句没有空格
 WORD_SEGMENTATION = True
 
+# ---- 字幕衬底检测与持续时间过滤 ----
+# 是否启用背景衬底检测（有半透明背景的文字保留，无衬底的文字过滤）
+SUBTITLE_BACKDROP_FILTER = True
+
+# 背景区域亮度标准差阈值：低于此值认为有均匀衬底（是字幕），高于此值认为是画面文字（非字幕）
+# 值越大越宽松，越小越严格。建议范围 30-60
+BACKDROP_STD_THRESHOLD = 50
+
+# 背景区域平均亮度上限：衬底通常是暗色半透明条，亮度不会太高
+# 高于此值的文字区域可能不是衬底字幕。设为255表示不启用亮度上限过滤
+BACKDROP_BRIGHTNESS_MAX = 255
+
+# 是否启用持续时间过滤（过滤长时间不变的文字，如背景经文、章节标题）
+LONG_DURATION_FILTER = True
+
+# 持续时间阈值（秒）：同一文本连续出现超过此时长，视为非字幕文字
+# 默认15秒，可在 settings.ini 中通过 LongDurationThreshold 自定义
+LONG_DURATION_THRESHOLD = 15
+try:
+    _ldt = settings_config.getfloat('DEFAULT', 'LongDurationThreshold', fallback=None)
+    if _ldt is not None:
+        LONG_DURATION_THRESHOLD = _ldt
+except (ValueError, configparser.Error):
+    pass
+
 # --------------------- 请根据自己的实际情况改 end-----------------------------
 
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'

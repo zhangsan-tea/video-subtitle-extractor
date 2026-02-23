@@ -473,7 +473,7 @@ class LanguageModeGUI:
         self.MODE_KEY_NAME_MAP = {v: k for k, v in self.MODE_NAME_KEY_MAP.items()}
 
     def _create_layout(self):
-        interface_def, language_def, mode_def = self.parse_config(self.config_file)
+        interface_def, language_def, mode_def, long_duration_def = self.parse_config(self.config_file)
         # 加载界面文本
         self._load_interface_text()
         choose_language_text = self.interface_config["LanguageModeGUI"]["InterfaceLanguage"]
@@ -496,6 +496,10 @@ class LanguageModeGUI:
             [sg.Text(choose_mode_text),
              sg.DropDown(values=list(self.MODE_NAME_KEY_MAP.keys()), size=(30, 20), pad=(0, 20),
                          key='-MODE-', readonly=True, default_value=mode_def)],
+            # 持续时间过滤阈值（秒）：超过此时长的文字视为非字幕
+            [sg.Text('过滤持续时间(秒)/Filter Duration(s)'),
+             sg.Input(default_text=str(long_duration_def), size=(10, 1), key='-LONG-DURATION-',
+                      tooltip='同一文本连续出现超过此秒数则过滤，0表示关闭此功能')],
             # 显示确认关闭按钮
             [sg.OK(), sg.Cancel()]
         ]
@@ -521,7 +525,15 @@ class LanguageModeGUI:
             print(self.interface_config["LanguageModeGUI"]["Mode"], mode_str)
             if mode_str in self.MODE_NAME_KEY_MAP:
                 mode = self.MODE_NAME_KEY_MAP[mode_str]
-            self.set_config(self.config_file, interface, language, mode)
+            # 获取持续时间阈值
+            long_duration_str = values.get('-LONG-DURATION-', '15')
+            try:
+                long_duration = float(long_duration_str)
+                if long_duration < 0:
+                    long_duration = 15
+            except (ValueError, TypeError):
+                long_duration = 15
+            self.set_config(self.config_file, interface, language, mode, long_duration)
             if self.subtitle_extractor_gui is not None:
                 self.subtitle_extractor_gui.update_interface_text()
             self.window.close()
@@ -534,20 +546,22 @@ class LanguageModeGUI:
             config = configparser.ConfigParser()
             if os.path.exists(self.config_file):
                 config.read(self.config_file, encoding='utf-8')
+                long_duration = config['DEFAULT'].get('LongDurationThreshold', '15')
                 self.set_config(self.config_file, values['-INTERFACE-'], config['DEFAULT']['Language'],
-                                config['DEFAULT']['Mode'])
+                                config['DEFAULT']['Mode'], float(long_duration))
             self.window.close()
             title = self._create_layout()
             self.window = sg.Window(title=title, layout=self.layout, icon=self.icon)
 
     @staticmethod
-    def set_config(config_file, interface, language_code, mode):
+    def set_config(config_file, interface, language_code, mode, long_duration_threshold=15):
         # 写入配置文件
         with open(config_file, mode='w', encoding='utf-8') as f:
             f.write('[DEFAULT]\n')
             f.write(f'Interface = {interface}\n')
             f.write(f'Language = {language_code}\n')
             f.write(f'Mode = {mode}\n')
+            f.write(f'LongDurationThreshold = {long_duration_threshold}\n')
 
     def parse_config(self, config_file):
         if not os.path.exists(config_file):
@@ -555,12 +569,16 @@ class LanguageModeGUI:
             interface_def = self.interface_config['LanguageModeGUI']['InterfaceDefault']
             language_def = self.interface_config['LanguageModeGUI']['InterfaceDefault']
             mode_def = self.interface_config['LanguageModeGUI']['ModeFast']
-            return interface_def, language_def, mode_def
+            return interface_def, language_def, mode_def, 15
         config = configparser.ConfigParser()
         config.read(config_file, encoding='utf-8')
         interface = config['DEFAULT']['Interface']
         language = config['DEFAULT']['Language']
         mode = config['DEFAULT']['Mode']
+        try:
+            long_duration = float(config['DEFAULT'].get('LongDurationThreshold', '15'))
+        except (ValueError, TypeError):
+            long_duration = 15
         self.interface_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'backend', 'interface',
                                            f"{self.INTERFACE_KEY_NAME_MAP[interface]}.ini")
         self._load_interface_text()
@@ -569,7 +587,7 @@ class LanguageModeGUI:
         language_def = self.LANGUAGE_KEY_NAME_MAP[language] if language in self.LANGUAGE_KEY_NAME_MAP else \
             self.LANGUAGE_DEF
         mode_def = self.MODE_KEY_NAME_MAP[mode] if mode in self.MODE_KEY_NAME_MAP else self.MODE_DEF
-        return interface_def, language_def, mode_def
+        return interface_def, language_def, mode_def, long_duration
 
 
 if __name__ == '__main__':
