@@ -276,7 +276,7 @@ WORD_SEGMENTATION = True
 
 # ---- 字幕衬底检测与持续时间过滤 ----
 # 是否启用背景衬底检测（有半透明背景的文字保留，无衬底的文字过滤）
-SUBTITLE_BACKDROP_FILTER = True
+SUBTITLE_BACKDROP_FILTER = False
 
 # 背景区域亮度标准差阈值：低于此值认为有均匀衬底（是字幕），高于此值认为是画面文字（非字幕）
 # 值越大越宽松，越小越严格。建议范围 30-60
