@@ -18,15 +18,15 @@ from collections import namedtuple
 
 def filter_dense_text_blocks(coordinates, texts, min_cluster_size=3, vertical_gap_ratio=2.0):
     """
-    过滤密集文字块（如经文面板）：当一帧中多个文字框在垂直方向密集排列时，
+    过滤密集文字块（如经文面板）：当一帧中多个文字框在垂直方向密集排列且水平位置相近时，
     判定它们属于叠加的文字面板而非字幕，将其过滤掉。
     
     算法逻辑：
     1. 按文字框的垂直中心点排序
-    2. 计算相邻文字框的垂直间距
-    3. 如果连续 >= min_cluster_size 个文字框的垂直间距都小于文字框自身高度的 vertical_gap_ratio 倍，
-       则认为它们形成了密集文字群
-    4. 返回不属于密集文字群的文字框索引
+    2. 计算相邻文字框的垂直间距和水平重叠度
+    3. 垂直间距小 且 水平有重叠 → 归入同一簇
+    4. 簇内文字框数量 >= min_cluster_size → 判定为密集文字群
+    5. 返回不属于密集文字群的文字框索引
     
     :param coordinates: 所有文字框坐标列表 [(xmin, xmax, ymin, ymax), ...]
     :param texts: 对应的文字内容列表
@@ -35,35 +35,53 @@ def filter_dense_text_blocks(coordinates, texts, min_cluster_size=3, vertical_ga
     :return: 保留的文字框索引集合
     """
     if len(coordinates) < min_cluster_size:
-        # 文字框数量不足以形成密集群，全部保留
         return set(range(len(coordinates)))
 
-    # 计算每个文字框的垂直中心和高度
+    # 计算每个文字框的信息：(原始索引, 垂直中心, 高度, ymin, ymax, xmin, xmax)
     box_info = []
     for idx, coord in enumerate(coordinates):
         xmin, xmax, ymin, ymax = coord
         cy = (ymin + ymax) / 2.0
         h = max(ymax - ymin, 1)
-        box_info.append((idx, cy, h, ymin, ymax))
+        box_info.append((idx, cy, h, ymin, ymax, xmin, xmax))
 
     # 按垂直中心排序
     box_info.sort(key=lambda x: x[1])
 
-    # 寻找密集文字群：相邻文字框垂直间距小于平均文字高度 * ratio
+    def has_horizontal_overlap(box_a, box_b, min_overlap_ratio=0.3):
+        """判断两个文字框水平方向是否有足够重叠"""
+        # box: (idx, cy, h, ymin, ymax, xmin, xmax)
+        a_xmin, a_xmax = box_a[5], box_a[6]
+        b_xmin, b_xmax = box_b[5], box_b[6]
+        overlap = max(0, min(a_xmax, b_xmax) - max(a_xmin, b_xmin))
+        min_width = min(a_xmax - a_xmin, b_xmax - b_xmin)
+        if min_width <= 0:
+            return False
+        return (overlap / min_width) >= min_overlap_ratio
+
+    # 寻找密集文字群：垂直间距小 + 水平有重叠
     dense_indices = set()
     cluster = [box_info[0]]
 
     for i in range(1, len(box_info)):
-        prev = cluster[-1]
         curr = box_info[i]
-        # 垂直间距 = 当前框顶部 - 上一个框底部
-        gap = curr[3] - prev[4]
-        # 使用两个框平均高度作为参考
+        # 与簇中最后一个框比较垂直间距
+        prev = cluster[-1]
+        gap = curr[3] - prev[4]  # 当前框顶部 - 上一框底部
         avg_h = (prev[2] + curr[2]) / 2.0
-        if gap < avg_h * vertical_gap_ratio:
+
+        # 检查与簇中任意一个框的水平重叠（用簇的整体水平范围）
+        cluster_xmin = min(b[5] for b in cluster)
+        cluster_xmax = max(b[6] for b in cluster)
+        curr_xmin, curr_xmax = curr[5], curr[6]
+        h_overlap = max(0, min(cluster_xmax, curr_xmax) - max(cluster_xmin, curr_xmin))
+        curr_width = max(curr_xmax - curr_xmin, 1)
+        h_overlap_ratio = h_overlap / curr_width
+
+        if gap < avg_h * vertical_gap_ratio and h_overlap_ratio >= 0.3:
             cluster.append(curr)
         else:
-            # 间距过大，当前簇结束
+            # 当前簇结束，判断是否为密集群
             if len(cluster) >= min_cluster_size:
                 for item in cluster:
                     dense_indices.add(item[0])
@@ -74,7 +92,6 @@ def filter_dense_text_blocks(coordinates, texts, min_cluster_size=3, vertical_ga
         for item in cluster:
             dense_indices.add(item[0])
 
-    # 返回不在密集群中的索引
     return set(range(len(coordinates))) - dense_indices
 
 
